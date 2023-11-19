@@ -5,7 +5,7 @@ from fastapi.exceptions import ValidationException
 from starlette.responses import JSONResponse
 
 from core.utils import card, rotate_image
-from core.utils import crop_image, get_old_info, get_smart_info, preprocess_image
+from core.utils import crop_image, get_old_info, get_smart_info
 
 app = FastAPI()
 
