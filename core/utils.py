@@ -9,6 +9,8 @@ from numpy import ndarray
 from scipy.ndimage import interpolation
 from ultralytics import YOLO
 
+from fastapi.exceptions import HTTPException
+
 reader_bn = easyocr.Reader(['bn'])
 reader_en = easyocr.Reader(['en'])
 model = YOLO("./models/last.pt")
@@ -88,11 +90,15 @@ def card(img):
     for r in results:
         boxes = r.boxes
 
+    if boxes is None or len(boxes.cls) == 0:
+        raise HTTPException(status_code=404, detail="Invalid card!")
+
     card_type = int(boxes.cls[0])
 
-    if card_type == CardType.NEW.value:
+    # TODO: refactor if else code
+    if card_type == int(CardType.NEW.value):
         card_type = 'new'
-    elif card_type == 3:
+    elif card_type == int(CardType.OLD.value):
         card_type = 'old'
     else:
         card_type = 'invalid'
@@ -130,9 +136,10 @@ def crop_image_with_face(image, card_type):
 def crop_image(image, card_type):
     y, x, _ = image.shape
     if card_type == 'old':
-        image = image[int(y * 0.35):y, int(x * 0.25):x]
-    else:
+        image = image[int(y * 0.35):y, int(x * 0.23):x]
+    elif card_type == 'new':
         image = image[int(y * 0.27):y, int(x * 0.3):x]
+
     return image
 
 
@@ -276,7 +283,7 @@ def get_smart_info(image, name_parser=name_parser_easyOCR, bday_nid_parser=bday_
 
 def get_old_info(image):
     # result_bn = reader_bn.readtext(image)
-    result_en = reader_en.readtext(image)
+    result_en = reader_en.readtext(preprocess_image(image, card_type='old'))
 
     # Filter bangla ocr results
     # filtered_bn = [i for i in result_bn if (i[-1] > 0.30 and len(i[1].strip()) > 5)]
@@ -299,7 +306,7 @@ def get_old_info(image):
     while first_item_valid.search(filtered_en[0][1]):
         filtered_en.pop(0)
 
-    en_name = filtered_en[0][1].strip().lstrip('Name:').lstrip('Name.').lstrip('Name').strip()
+    en_name = filtered_en[0][1].strip().lstrip('Name:').lstrip('Name.').lstrip('Name').lstrip('lame').lstrip('vame').strip()
     en_name = en_name.replace(':', '.')
 
     filtered_en = [i for i in filtered_en if len(list(i[1])) > 8]
@@ -319,7 +326,7 @@ def get_old_info(image):
     nid = pattern_id.findall(filtered_en[-1][1])
     nid = ''.join(nid)
 
-    return {'en_name': en_name,'Date of birth': bday, 'nid': nid}
+    return {'en_name': en_name, 'Date of birth': bday, 'nid': nid}
 
 
 def get_personal_info_pytesseract(image):

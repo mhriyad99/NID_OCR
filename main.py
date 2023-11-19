@@ -1,10 +1,11 @@
 import cv2
 import numpy as np
 from fastapi import FastAPI, File, UploadFile
+from fastapi.exceptions import ValidationException
 from starlette.responses import JSONResponse
 
 from core.utils import card, rotate_image
-from core.utils import crop_image, get_old_info, get_smart_info
+from core.utils import crop_image, get_old_info, get_smart_info, preprocess_image
 
 app = FastAPI()
 
