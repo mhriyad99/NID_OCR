@@ -17,7 +17,7 @@ venv\Scripts\activate
 ```
 **Step 5**: Install dependencies using pip within the virtual environment
 ```shell
-pip install requirements.txt
+pip install -r requirements.txt
 ```
 **Step 6**: Run server
 ```shell
