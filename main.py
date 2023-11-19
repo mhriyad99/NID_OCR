@@ -10,7 +10,7 @@ from core.utils import crop_image, get_old_info, get_smart_info
 app = FastAPI()
 
 
-@app.post("/")
+@app.post("/search-nid")
 async def search_personal_info(file: UploadFile = File(..., description='upload a image file with extension [.png, '
                                                                         '.jpg, .jpeg]')):
     # Read the uploaded image as bytes
