@@ -19,3 +19,7 @@ venv\Scripts\activate
 ```shell
 pip install requirements.txt
 ```
+**Step 6**: Run server
+```shell
+uvicorn main:app
+```
