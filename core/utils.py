@@ -88,7 +88,7 @@ def card(img):
     for r in results:
         boxes = r.boxes
 
-    card_type = int(boxes.cls)
+    card_type = int(boxes.cls[0])
 
     if card_type == CardType.NEW.value:
         card_type = 'new'
