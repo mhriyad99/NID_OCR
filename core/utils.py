@@ -278,7 +278,7 @@ def get_smart_info(image, name_parser=name_parser_easyOCR, bday_nid_parser=bday_
     result_nid = reader_en.readtext(preprocess_image(nid_seg, card_type='new'), detail=1)
     nid = bday_nid_parser(result_nid, field='nid')
 
-    return {'en_name': en_name, 'Date of birth': bday, 'nid': nid}
+    return {'name': en_name, 'dob': bday, 'nid': nid}
 
 
 def get_old_info(image):
@@ -326,7 +326,7 @@ def get_old_info(image):
     nid = pattern_id.findall(filtered_en[-1][1])
     nid = ''.join(nid)
 
-    return {'en_name': en_name, 'Date of birth': bday, 'nid': nid}
+    return {'name': en_name, 'dob': bday, 'nid': nid}
 
 
 def get_personal_info_pytesseract(image):

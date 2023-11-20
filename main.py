@@ -1,7 +1,8 @@
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, UploadFile
-from fastapi.exceptions import ValidationException
+from fastapi import FastAPI, File, UploadFile, Request
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from starlette.responses import JSONResponse
 
 from core.utils import card, rotate_image
@@ -9,11 +10,34 @@ from core.utils import crop_image, get_old_info, get_smart_info
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins="*",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
+
+class FileNotUploadedResponse(Exception):
+    def __init__(self, message: str = "Error!"):
+        self.message = message
+
+
+@app.exception_handler(FileNotUploadedResponse)
+async def unicorn_exception_handler(request: Request, exc: FileNotUploadedResponse):
+    return JSONResponse(
+        status_code=422,
+        content={"message": exc.message},
+    )
+
 
 @app.post("/search-nid")
-async def search_personal_info(file: UploadFile = File(..., description='upload a image file with extension [.png, '
-                                                                        '.jpg, .jpeg]')):
-    # Read the uploaded image as bytes
+async def search_personal_info(file: UploadFile = File(None, description='upload a image file with extension [.png, '
+                                                                         '.jpg, .jpeg]')):
+    if file is None:
+        raise FileNotUploadedResponse("Please provide a nid image")
+
     image_bytes = await file.read()
 
     # Convert the image bytes to a NumPy array using OpenCV
@@ -29,8 +53,3 @@ async def search_personal_info(file: UploadFile = File(..., description='upload 
     else:
         info = get_old_info(image)
     return info
-
-
-
-
-
