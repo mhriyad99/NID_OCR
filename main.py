@@ -2,10 +2,9 @@ import cv2
 import numpy as np
 from fastapi import FastAPI, File, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from starlette.responses import JSONResponse
 
-from core.utils import card, rotate_image
+from core.utils import card, rotate_image, preprocess_image
 from core.utils import crop_image, get_old_info, get_smart_info
 
 app = FastAPI()
@@ -30,7 +29,6 @@ async def unicorn_exception_handler(request: Request, exc: FileNotUploadedRespon
         status_code=422,
         content={"message": exc.message},
     )
-
 
 
 @app.post("/search-nid")
