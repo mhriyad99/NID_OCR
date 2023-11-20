@@ -32,6 +32,7 @@ async def unicorn_exception_handler(request: Request, exc: FileNotUploadedRespon
     )
 
 
+
 @app.post("/search-nid")
 async def search_personal_info(file: UploadFile = File(None, description='upload a image file with extension [.png, '
                                                                          '.jpg, .jpeg]')):
