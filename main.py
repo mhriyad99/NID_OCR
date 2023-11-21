@@ -4,8 +4,11 @@ from fastapi import FastAPI, File, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 
-from core.utils import card, rotate_image, preprocess_image
+from core.events import load_model
+from core.utils import card, rotate_image, preprocess_image, CardType
 from core.utils import crop_image, get_old_info, get_smart_info
+from core.services import OldCardProcess, NewCardProcess
+from schema.common import ErrorResponse
 
 app = FastAPI()
 
@@ -18,24 +21,48 @@ app.add_middleware(
 )
 
 
-class FileNotUploadedResponse(Exception):
-    def __init__(self, message: str = "Error!"):
-        self.message = message
+@app.on_event("startup")
+def load_startup_models():
+    load_model()
 
 
-@app.exception_handler(FileNotUploadedResponse)
-async def unicorn_exception_handler(request: Request, exc: FileNotUploadedResponse):
+@app.exception_handler(ErrorResponse)
+async def unicorn_exception_handler(request: Request, exc: ErrorResponse):
     return JSONResponse(
-        status_code=422,
+        status_code=exc.status_code,
         content={"message": exc.message},
     )
+
+
+@app.post("/search-info")
+async def search_personal_info(file: UploadFile = File(None, description='upload a image file with extension [.png, '
+                                                                         '.jpg, .jpeg]')):
+    if file is None:
+        raise ErrorResponse(status_code=422, message="Please provide a nid image")
+
+    image_bytes = await file.read()
+
+    # Convert the image bytes to a NumPy array using OpenCV
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    card_image, card_type = card(image)
+    card_image = rotate_image(card_image)
+
+    if card_type == CardType.NEW.value:
+        processed = NewCardProcess(card_image)
+    else:
+        processed = OldCardProcess(card_image)
+
+    info = processed.process()
+    return info
 
 
 @app.post("/search-nid")
 async def search_personal_info(file: UploadFile = File(None, description='upload a image file with extension [.png, '
                                                                          '.jpg, .jpeg]')):
     if file is None:
-        raise FileNotUploadedResponse("Please provide a nid image")
+        raise ErrorResponse(status_code=422, message="Please provide a nid image")
 
     image_bytes = await file.read()
 

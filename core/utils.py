@@ -1,62 +1,31 @@
 import re
-from enum import Enum
-
+from typing import Tuple
 import cv2
 import easyocr
 import numpy as np
 import pytesseract
+from fastapi.exceptions import HTTPException
 from numpy import ndarray
 from scipy.ndimage import interpolation
 from ultralytics import YOLO
 
-from fastapi.exceptions import HTTPException
-
-reader_bn = easyocr.Reader(['bn'])
-reader_en = easyocr.Reader(['en'])
-model = YOLO("./models/last.pt")
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+from schema.common import CardType
 
 
-class ICardPreprocess:
+class OCRModel:
+    reader_bn = None
+    reader_en = None
+    model = None
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
-    def __init__(self, image: ndarray):
-        self.image = image
-
-    def crop_image(self):
-        raise NotImplementedError()
-
-    def get_info(self):
-        raise NotImplementedError()
-
-    def process(self):
-        self.crop_image()
-        self.get_info()
-        return self.image
+    @classmethod
+    def init_models(cls):
+        cls.reader_bn = easyocr.Reader(['bn'])
+        cls.reader_en = easyocr.Reader(['en'])
+        cls.model = YOLO("./models/last.pt")
 
 
-class OldCardPreProcess(ICardPreprocess):
-    def __init__(self, image: ndarray):
-        super().__init__(image)
-
-    def crop_image(self) -> ():
-        pass
-
-    def get_info(self) -> ():
-        pass
-
-
-class NewCardPreProcess(ICardPreprocess):
-    def __init__(self, image: ndarray):
-        super().__init__(image)
-
-    def crop_image(self):
-        pass
-
-    def get_info(self):
-        pass
-
-
-def find_score(arr, angle):
+def find_score(arr, angle) -> tuple[ndarray, ndarray]:
     data = interpolation.rotate(arr, angle, reshape=False, order=0)
     hist = np.sum(data, axis=1)
     score = np.sum((hist[1:] - hist[:-1]) ** 2)
@@ -79,29 +48,19 @@ def rotate_image(img):
     return img
 
 
-class CardType(str, Enum):
-    NEW = 1
-    OLD = 3
-
-
-def card(img):
-    results = model.predict(img, stream=True)
+def card(img, raise_error=True) -> Tuple[ndarray, int]:
+    results = OCRModel.model.predict(img, stream=True)
     boxes = None
     for r in results:
         boxes = r.boxes
 
-    if boxes is None or len(boxes.cls) == 0:
+    if boxes is None or len(boxes.cls) == 0 and raise_error:
         raise HTTPException(status_code=404, detail="Invalid card!")
 
     card_type = int(boxes.cls[0])
 
-    # TODO: refactor if else code
-    if card_type == int(CardType.NEW.value):
-        card_type = 'new'
-    elif card_type == int(CardType.OLD.value):
-        card_type = 'old'
-    else:
-        card_type = 'invalid'
+    if card_type not in list(map(lambda x: x.value, list(CardType))) and raise_error:
+        raise HTTPException(status_code=404, detail="Invalid card!")
 
     x_min, y_min, x_max, y_max, *_ = list(map(int, boxes.data[0]))
     return img[y_min:y_max, x_min:x_max], card_type
@@ -202,10 +161,10 @@ def name_parser_tesseract(image, lang_type, card_type='new'):
 
 def name_parser_easyOCR(image, lang_type, card_type='new'):
     if lang_type == 'bangla':
-        result = reader_bn.readtext(preprocess_image(image, card_type), detail=1)
+        result = OCRModel.reader_bn.readtext(preprocess_image(image, card_type), detail=1)
         pattern = r'[A-Za-z0-9\u09E6-\u09EF]'
     else:
-        result = reader_en.readtext(preprocess_image(image, card_type), detail=1)
+        result = OCRModel.reader_en.readtext(preprocess_image(image, card_type), detail=1)
         pattern = r'[0-9\u09E6-\u09EF]'
 
     sub_pattern = '[!@#\$%^&*()_+{}[\]:;<>,?\/\\=|`~"\'-]'
@@ -271,11 +230,11 @@ def get_smart_info(image, name_parser=name_parser_easyOCR, bday_nid_parser=bday_
     # m_name = name_parser(m_name_seg, lang_type='bangla')
 
     # get birthdate
-    result_bd = reader_en.readtext(preprocess_image(b_day_seg, card_type='new'), detail=1)
+    result_bd = OCRModel.reader_en.readtext(preprocess_image(b_day_seg, card_type='new'), detail=1)
     bday = bday_nid_parser(result_bd, field='bd')
 
     # get NID
-    result_nid = reader_en.readtext(preprocess_image(nid_seg, card_type='new'), detail=1)
+    result_nid = OCRModel.reader_en.readtext(preprocess_image(nid_seg, card_type='new'), detail=1)
     nid = bday_nid_parser(result_nid, field='nid')
 
     return {'name': en_name, 'dob': bday, 'nid': nid}
@@ -306,7 +265,8 @@ def get_old_info(image):
     while first_item_valid.search(filtered_en[0][1]):
         filtered_en.pop(0)
 
-    en_name = filtered_en[0][1].strip().lstrip('Name:').lstrip('Name.').lstrip('Name').lstrip('lame').lstrip('vame').strip()
+    en_name = filtered_en[0][1].strip().lstrip('Name:').lstrip('Name.').lstrip('Name').lstrip('lame').lstrip(
+        'vame').strip()
     en_name = en_name.replace(':', '.')
 
     filtered_en = [i for i in filtered_en if len(list(i[1])) > 8]
@@ -363,7 +323,7 @@ def get_personal_info_pytesseract(image):
     # english info extract
     y, x = image.shape[0:2]
     image = image[int(y * 0.17):y, 0:x]
-    result_en = reader_en.readtext(image, detail=1)
+    result_en = OCRModel.reader_en.readtext(image, detail=1)
 
     en_filter = ['Name', 'Name:', 'NATIONAL ID CARD', 'NATIONAL', 'ID CARD', 'ID Card']
     pattern_en = ['NATIONAL', 'National', 'ID CARD', 'ID Card']
