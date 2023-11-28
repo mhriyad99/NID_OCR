@@ -1,4 +1,4 @@
-# NID_OCR
+# NID-OCR
 ## Installation
 ### Local setup
 **Step 1**: Install Python if not already installed 

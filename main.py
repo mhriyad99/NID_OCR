@@ -74,7 +74,7 @@ async def search_personal_info(file: UploadFile = File(None, description='upload
     card_image = rotate_image(card_image)
     image = crop_image(card_image, card_type)
 
-    if card_type == 'new':
+    if card_type == CardType.NEW.value:
         info = get_smart_info(image)
     else:
         info = get_old_info(image)

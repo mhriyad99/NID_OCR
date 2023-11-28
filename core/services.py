@@ -21,7 +21,23 @@ class ICardProcess:
 
     @staticmethod
     def preprocess_image(image):
+        # De-noising the picture
         image = cv2.fastNlMeansDenoisingColored(image, None, 5, 10, 7, 15)
+
+        # converting to LAB color space
+        lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+        l_channel, a, b = cv2.split(lab)
+
+        # Applying CLAHE to L-channel
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(16, 16))
+        cl = clahe.apply(l_channel)
+
+        # merge the CLAHE enhanced L-channel with the a and b channel
+        limg = cv2.merge((cl, a, b))
+
+        # Converting image from LAB Color model to BGR color spcae
+        image = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         _, image = cv2.threshold(image, thresh=100, maxval=130, type=cv2.THRESH_TRUNC + cv2.THRESH_OTSU)
         return image
@@ -42,24 +58,13 @@ class OldCardProcess(ICardProcess):
 
     def get_info(self):
         b_day = ''
-        # result_bn = reader_bn.readtext(image)
-        result_en = OCRModel.reader_en.readtext(self.image)
 
-        # Filter bangla ocr results
-        # filtered_bn = [i for i in result_bn if (i[-1] > 0.30 and len(i[1].strip()) > 5 )]
+        result_en = OCRModel.reader_en.readtext(self.preprocess_image(self.image))
 
-        # Filter english ocr results
-        # TODO: case-1: if any text not in image
+        if len(result_en) < 2:
+            return NIDInfo(**{'name': '', 'dob': '', 'nid': ''})
+
         filtered_en = [i for i in result_en if (i[-1] > 0.35 and len(i[1].strip()) > 5)]
-
-        # Individual's bangla name
-        # bn_name = filtered_bn[0][1].strip().lstrip('নাম:').lstrip('নাম.').lstrip('নাম').strip()
-
-        # Father's name
-        # f_name = filtered_bn[1][1].strip().lstrip('পিতা:').lstrip('পিতা.').lstrip('পিতা').strip()
-
-        # Mother's name
-        # m_name = filtered_bn[2][1].strip().lstrip('মাতা:').lstrip('মাতা.').lstrip('মাতা').strip()
 
         # Individual's english name
         first_item_valid = re.compile('\d+')
@@ -67,7 +72,11 @@ class OldCardProcess(ICardProcess):
         while first_item_valid.search(filtered_en[0][1]):
             filtered_en.pop(0)
 
-        en_name = filtered_en[0][1].strip().lstrip('Name:').lstrip('Name.').lstrip('Name').strip().replace(':', '.')
+        en_name = filtered_en[0][1].strip()
+        words_to_remove = ['Name', 'lame', 'ame', ':', '.']
+        for word in words_to_remove:
+            if en_name.startswith(word):
+                en_name = en_name.lstrip(word).strip()
 
         filtered_en = [i for i in filtered_en if len(list(i[1])) > 8]
 
@@ -145,8 +154,10 @@ class NewCardProcess(ICardProcess):
         :return: str
         """
         result = self.get_easy_ocr_reader(lang_type).readtext(self.preprocess_image(image), detail=1)
-        pattern = self.get_pattern(lang_type)
+        if len(result) < 1:
+            return ''
 
+        pattern = self.get_pattern(lang_type)
         sub_pattern = '[!@#\$%^&*()_+{}[\]:;<>,?\/\\=|`~"\'-]'
         filtered_list = [i for i in result if i[-1] > 0.3]
         filtered_list = [i for i in filtered_list if len(list(i[1])) > 5]
@@ -158,51 +169,52 @@ class NewCardProcess(ICardProcess):
         else:
             return ''
 
-    def bday_nid_parser_easyOCR(self, image: ndarray, field):
+    def bday_parser_easyOCR(self, image: ndarray) -> str:
         result = OCRModel.reader_en.readtext(self.preprocess_image(image), detail=1)
-        filtered_list = [i for i in result if i[-1] > 0.3]
-        filtered_list = [i for i in filtered_list if len(list(i[1])) > 7]
+        if len(result) < 1:
+            return ''
+        filtered_list = [i for i in result if i[-1] > 0.3 and len(list(i[1])) > 7]
+        # filtered_list = [i for i in filtered_list if len(list(i[1])) > 7]
+        bday = ''
 
         if len(filtered_list) >= 1:
-            if field == 'bd':
-                pattern_bday = re.compile(r'.*?(\d.*)')
-                matches_bday = pattern_bday.search(filtered_list[0][1])
+            pattern_bday = re.compile(r'.*?(\d.*)')
+            matches_bday = pattern_bday.search(filtered_list[0][1])
+            if matches_bday:
+                bday = matches_bday.group(1)
+                bday = bday.strip(' ')
 
-                if matches_bday:
-                    bday = matches_bday.group(1)
-                    bday = bday.strip(' ')
-                else:
-                    bday = ''
+        return bday
 
-                return bday
+    def nid_parser_easyOCR(self, image: ndarray) -> str:
+        result = OCRModel.reader_en.readtext(self.preprocess_image(image), detail=1)
+        if len(result) < 1:
+            return ''
+        filtered_list = [i for i in result if i[-1] > 0.3 and len(list(i[1])) > 9]
+        # filtered_list = [i for i in filtered_list if len(list(i[1])) > 9]
+        nid = ''
 
-            elif field == 'nid':
-                pattern_id = re.compile(r'\d+')
-                nid = pattern_id.findall(filtered_list[-1][1])
-                nid = ''.join(nid)
+        if len(filtered_list) >= 1:
+            pattern_id = re.compile(r'\d+')
+            nid = pattern_id.findall(filtered_list[-1][1])
+            nid = ''.join(nid)
 
-                return nid
+        return nid
 
     def get_info(self):
         y, x, _ = self.image.shape
 
         # Segment the image
-        # bn_name_seg = image[0:int(y * 0.17), 0:int(x * 0.65)]
-        en_name_seg = self.image[int(y * 0.18):int(y * 0.32), 0:int(x * 0.65)]
-        # f_name_seg = image[int(y * 0.33):int(y * 0.53), 0:int(x * 0.65)]
-        # m_name_seg = image[int(y * 0.51):int(y * 0.69), 0:int(x * 0.65)]
+        en_name_seg = self.image[int(y * 0.18):int(y * 0.35), 0:int(x * 0.65)]
         b_day_seg = self.image[int(y * 0.65):int(y * 0.85), int(x * 0.21):int(x * 0.80)]
         nid_seg = self.image[int(y * 0.77):int(y * 0.98), int(x * 0.21):x]
 
-        # get names
-        # bn_name = name_parser(bn_name_seg, lang_type='bangla')
+        # get name
         en_name = self.name_parser_easyOCR(en_name_seg, lang_type=LangType.english)
-        # f_name = name_parser(f_name_seg, lang_type='bangla')
-        # m_name = name_parser(m_name_seg, lang_type='bangla')
 
         # get birthdate and NID
-        bday = self.bday_nid_parser_easyOCR(b_day_seg, field='bd')
-        nid = self.bday_nid_parser_easyOCR(nid_seg, field='nid')
+        bday = self.bday_parser_easyOCR(b_day_seg)
+        nid = self.nid_parser_easyOCR(nid_seg)
 
         return NIDInfo(**{'name': en_name, 'dob': bday,
                           'nid': nid})
